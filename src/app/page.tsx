@@ -1,103 +1,127 @@
+"use client";
 import Image from "next/image";
+import { useRef, useState, useEffect } from "react";
+
+const marcText = ``;
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([
+    // Start with no initial message
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [valuation, setValuation] = useState(0); // Live valuation state
+  const chatRef = useRef<HTMLDivElement>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Auto-scroll to bottom when messages or input change
+  useEffect(() => {
+    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, input]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
+    const userMsg = { role: "user", content: input };
+    setMessages((msgs) => [...msgs, userMsg, { role: "ai", content: "" }]);
+    setInput("");
+    setLoading(true);
+    try {
+      // Prepare chat history for API (skip the intro message)
+      const chatHistory = [
+        ...messages
+          .slice(1) // skip the intro in state
+          .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
+        { role: "user", content: input },
+      ];
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: chatHistory }),
+      });
+      if (!res.body) throw new Error("No response body");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let aiText = "";
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        if (value) {
+          aiText += decoder.decode(value, { stream: true });
+          // Try to extract only the content from the OpenAI stream
+          const lines = aiText.split("\n").filter(Boolean);
+          let streamed = "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const json = line.replace("data: ", "");
+              if (json === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(json);
+                streamed += parsed.choices?.[0]?.delta?.content || "";
+              } catch {}
+            }
+          }
+          // Check for VALUATION: $X in streamed
+          const valuationMatch = streamed.match(/VALUATION: \$([0-9,.]+)/i);
+          if (valuationMatch) {
+            setValuation(Number(valuationMatch[1].replace(/,/g, "")));
+            // Do NOT remove the valuation line from the displayed message
+          }
+          setMessages((msgs) => {
+            const newMsgs = [...msgs];
+            newMsgs[newMsgs.length - 1] = { role: "ai", content: streamed };
+            return newMsgs;
+          });
+        }
+      }
+    } catch (err) {
+      setMessages((msgs) => [
+        ...msgs.slice(0, -1),
+        { role: "ai", content: "Sorry, there was an error." },
+      ]);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center bg-white">
+      <div className="max-w-[500px] mx-auto w-full h-screen flex flex-col bg-white pb-8">
+        <div ref={chatRef} className="flex-1 overflow-y-auto flex flex-col gap-6 px-1 pt-12 hide-scrollbar">
+          {messages.map((msg, i) => (
+            <div key={i} className="flex items-start gap-4 w-full">
+              {msg.role === "ai" ? (
+                <Image
+                  src="/assets/marc_pic.png"
+                  alt="Marc Andreessen's profile picture"
+                  width={40}
+                  height={40}
+                  className="rounded-full border border-gray-200 mt-1"
+                  priority
+                />
+              ) : (
+                <div className="w-10" />
+              )}
+              <div className="flex flex-col flex-1">
+                {msg.role === "ai" && <span className="font-bold text-sm mb-1">Marc Andreessen</span>}
+                <div className={`text-base font-mono text-gray-900 whitespace-pre-wrap ${msg.role === "ai" ? "" : "text-right"}`}>
+                  {msg.content || (loading && i === messages.length - 1 ? <span className="opacity-70">...</span> : null)}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+        <form className="w-full flex justify-center bg-white pt-[25px]" onSubmit={handleSend}>
+          <input
+            type="text"
+            placeholder="Type your answer..."
+            className="w-full px-4 py-3 font-mono text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            disabled={loading}
+            autoFocus
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        </form>
+      </div>
+    </main>
   );
 }
