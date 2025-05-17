@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useRef, useState, useEffect } from "react";
+import { ValuationTicker } from "./components/ValuationTicker";
 
 const marcText = ``;
 
@@ -17,6 +18,13 @@ export default function Home() {
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, input]);
+
+  const parseValuation = (valStr: string): number => {
+    const num = parseFloat(valStr.replace(/,/g, ''));
+    if (valStr.toUpperCase().endsWith('M')) return num * 1000000;
+    if (valStr.toUpperCase().endsWith('B')) return num * 1000000000;
+    return num;
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,10 +70,9 @@ export default function Home() {
             }
           }
           // Check for VALUATION: $X in streamed
-          const valuationMatch = streamed.match(/VALUATION: \$([0-9,.]+)/i);
+          const valuationMatch = streamed.match(/VALUATION: \$([0-9,.]+[MB]?)/i);
           if (valuationMatch) {
-            setValuation(Number(valuationMatch[1].replace(/,/g, "")));
-            // Do NOT remove the valuation line from the displayed message
+            setValuation(parseValuation(valuationMatch[1]));
           }
           setMessages((msgs) => {
             const newMsgs = [...msgs];
@@ -84,8 +91,9 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center bg-white">
-      <div className="max-w-[500px] mx-auto w-full h-screen flex flex-col bg-white pb-8">
+    <main className="flex min-h-screen flex-col bg-white">
+      <ValuationTicker valuation={valuation} />
+      <div className="max-w-[500px] ml-8 w-full h-screen flex flex-col bg-white pb-8">
         <div ref={chatRef} className="flex-1 overflow-y-auto flex flex-col gap-6 px-1 pt-12 hide-scrollbar">
           {messages.map((msg, i) => (
             <div key={i} className="flex items-start gap-4 w-full">
