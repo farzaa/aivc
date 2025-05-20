@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ValuationTickerProps {
   valuation: number;
@@ -26,7 +26,9 @@ export const ValuationTicker = ({ valuation }: ValuationTickerProps) => {
 
   return (
     <div className="fixed top-4 right-4 bg-white/90 backdrop-blur-md rounded-xl p-4 border border-gray-100">
-      <div className="text-sm text-gray-500 font-medium mb-1">Current Valuation</div>
+      <div className="text-sm text-gray-500 font-medium mb-1">
+        Current Valuation
+      </div>
       <AnimatePresence mode="wait">
         <motion.div
           key={valuation}
@@ -36,11 +38,15 @@ export const ValuationTicker = ({ valuation }: ValuationTickerProps) => {
           transition={{ duration: 0.3 }}
           className="text-2xl font-bold"
         >
-          <span className={`${isIncreasing ? 'text-emerald-600' : 'text-rose-600'} font-mono`}>
+          <span
+            className={`${
+              isIncreasing ? "text-emerald-600" : "text-rose-600"
+            } font-mono`}
+          >
             {formatValuation(valuation)}
           </span>
         </motion.div>
       </AnimatePresence>
     </div>
   );
-}; 
+};
