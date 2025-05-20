@@ -2,61 +2,96 @@
 import Image from "next/image";
 import { useRef, useState, useEffect } from "react";
 import { ValuationTicker } from "./components/ValuationTicker";
+import { ApiKeyManager } from "./components/ApiKeyManager";
+import { BotSelector, BotType } from "./components/BotSelector";
 
-const marcText = ``;
+const INITIAL_MESSAGES = {
+  marc: "Hey, I'm Marc. What are you building? Let's talk about your startup.",
+  farza:
+    "yo! what are you building? let's see if it's actually gonna work lol 🚀",
+  sam: "Hi, I'm Sam. I'd love to hear about your vision and how you see it shaping the future.",
+};
 
 export default function Home() {
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([
-    // Start with no initial message
-  ]);
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>(
+    []
+  );
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [valuation, setValuation] = useState(0); // Live valuation state
+  const [valuation, setValuation] = useState(0);
+  const [selectedBot, setSelectedBot] = useState<BotType>("marc");
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when messages or input change
+  // Add initial message when component mounts
   useEffect(() => {
-    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
+    setMessages([{ role: "ai", content: INITIAL_MESSAGES[selectedBot] }]);
+  }, []);
+
+  // Clear chat and add new initial message when bot changes
+  const handleBotChange = (bot: BotType) => {
+    setSelectedBot(bot);
+    setMessages([{ role: "ai", content: INITIAL_MESSAGES[bot] }]);
+    setValuation(0);
+  };
+
+  useEffect(() => {
+    chatRef.current?.scrollTo({
+      top: chatRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages, input]);
 
   const parseValuation = (valStr: string): number => {
-    const num = parseFloat(valStr.replace(/,/g, ''));
-    if (valStr.toUpperCase().endsWith('M')) return num * 1000000;
-    if (valStr.toUpperCase().endsWith('B')) return num * 1000000000;
+    const num = parseFloat(valStr.replace(/,/g, ""));
+    if (valStr.toUpperCase().endsWith("M")) return num * 1000000;
+    if (valStr.toUpperCase().endsWith("B")) return num * 1000000000;
     return num;
   };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || loading) return;
+
+    const apiKey = localStorage.getItem("openai_api_key");
+    if (!apiKey) {
+      alert("Please set your OpenAI API key first");
+      return;
+    }
+
     const userMsg = { role: "user", content: input };
     setMessages((msgs) => [...msgs, userMsg, { role: "ai", content: "" }]);
     setInput("");
     setLoading(true);
+
     try {
-      // Prepare chat history for API (skip the intro message)
       const chatHistory = [
-        ...messages
-          .slice(1) // skip the intro in state
-          .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
+        ...messages.map((m) => ({
+          role: m.role === "ai" ? "assistant" : "user",
+          content: m.content,
+        })),
         { role: "user", content: input },
       ];
+
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: chatHistory }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-openai-api-key": apiKey,
+        },
+        body: JSON.stringify({ messages: chatHistory, bot: selectedBot }),
       });
+
       if (!res.body) throw new Error("No response body");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
       let aiText = "";
+
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
         if (value) {
           aiText += decoder.decode(value, { stream: true });
-          // Try to extract only the content from the OpenAI stream
           const lines = aiText.split("\n").filter(Boolean);
           let streamed = "";
           for (const line of lines) {
@@ -69,8 +104,9 @@ export default function Home() {
               } catch {}
             }
           }
-          // Check for VALUATION: $X in streamed
-          const valuationMatch = streamed.match(/VALUATION: \$([0-9,.]+[MB]?)/i);
+          const valuationMatch = streamed.match(
+            /VALUATION: \$([0-9,.]+[MB]?)/i
+          );
           if (valuationMatch) {
             setValuation(parseValuation(valuationMatch[1]));
           }
@@ -90,17 +126,44 @@ export default function Home() {
     setLoading(false);
   };
 
+  const getBotImage = () => {
+    switch (selectedBot) {
+      case "marc":
+        return "/assets/marc_pic.png";
+      case "farza":
+        return "/assets/farza_pic.jpg";
+      case "sam":
+        return "/assets/sam_pic.png";
+    }
+  };
+
+  const getBotName = () => {
+    switch (selectedBot) {
+      case "marc":
+        return "Marc Andreessen";
+      case "farza":
+        return "Farza";
+      case "sam":
+        return "Sam Altman";
+    }
+  };
+
   return (
     <main className="flex min-h-screen flex-col bg-white">
+      <ApiKeyManager />
+      <BotSelector selectedBot={selectedBot} onBotChange={handleBotChange} />
       <ValuationTicker valuation={valuation} />
       <div className="max-w-[500px] ml-8 w-full h-screen flex flex-col bg-white pb-8">
-        <div ref={chatRef} className="flex-1 overflow-y-auto flex flex-col gap-6 px-1 pt-12 hide-scrollbar">
+        <div
+          ref={chatRef}
+          className="flex-1 overflow-y-auto flex flex-col gap-6 px-1 pt-12 hide-scrollbar"
+        >
           {messages.map((msg, i) => (
             <div key={i} className="flex items-start gap-4 w-full">
               {msg.role === "ai" ? (
                 <Image
-                  src="/assets/marc_pic.png"
-                  alt="Marc Andreessen's profile picture"
+                  src={getBotImage()}
+                  alt={`${getBotName()}'s profile picture`}
                   width={40}
                   height={40}
                   className="rounded-full border border-gray-200 mt-1"
@@ -110,21 +173,33 @@ export default function Home() {
                 <div className="w-10" />
               )}
               <div className="flex flex-col flex-1">
-                {msg.role === "ai" && <span className="font-bold text-sm mb-1">Marc Andreessen</span>}
-                <div className={`text-base font-mono text-gray-900 whitespace-pre-wrap ${msg.role === "ai" ? "" : "text-right"}`}>
-                  {msg.content || (loading && i === messages.length - 1 ? <span className="opacity-70">...</span> : null)}
+                {msg.role === "ai" && (
+                  <span className="font-bold text-sm mb-1">{getBotName()}</span>
+                )}
+                <div
+                  className={`text-base font-mono text-gray-900 whitespace-pre-wrap ${
+                    msg.role === "ai" ? "" : "text-right"
+                  }`}
+                >
+                  {msg.content ||
+                    (loading && i === messages.length - 1 ? (
+                      <span className="opacity-70">...</span>
+                    ) : null)}
                 </div>
               </div>
             </div>
           ))}
         </div>
-        <form className="w-full flex justify-center bg-white pt-[25px]" onSubmit={handleSend}>
+        <form
+          className="w-full flex justify-center bg-white pt-[25px]"
+          onSubmit={handleSend}
+        >
           <input
             type="text"
             placeholder="Type your answer..."
             className="w-full px-4 py-3 font-mono text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={(e) => setInput(e.target.value)}
             disabled={loading}
             autoFocus
           />
